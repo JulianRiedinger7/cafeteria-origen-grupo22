@@ -34,9 +34,7 @@ router.post('/login', async (req, res, next) => {
       if (existe) {
         return res.status(401).json({ error: 'La contraseña es incorrecta.' });
       }
-      return res
-        .status(401)
-        .json({ error: `El usuario "${username}" no existe en el sistema.` });
+      return res.status(401).json({ error: `El usuario no existe en el sistema.` });
     }
 
     crearSesion(req, res, {
