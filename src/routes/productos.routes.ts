@@ -51,6 +51,9 @@ router.get('/variedades', async (req, res, next) => {
  */
 router.get('/:id', async (req, res, next) => {
   try {
+    if (!Number.isInteger(Number(req.params.id))) {
+      return res.status(400).json({ error: `El id del producto debe ser un número.` });
+    }
     const producto = await catalogo.obtener(req.params.id);
     if (!producto) {
       return res.status(404).json({ error: `No existe el producto solicitado.` });
