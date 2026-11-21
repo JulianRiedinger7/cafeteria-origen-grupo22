@@ -1,4 +1,5 @@
 import express from 'express';
+import { requiereRol, requiereSesion } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -14,7 +15,9 @@ const router = express.Router();
  * En un entorno real estos endpoints quedan detrás de autenticación y no
  * deberían existir en producción.
  */
-router.get('/', (req, res) => {
+router.get('/', (req, res, next) => {
+  requiereSesion(req, res, next);
+  requiereRol('admin')(req, res, next);
   res.json({
     mensaje: 'Diagnóstico del servidor',
     version: '1.0.0',
