@@ -31,12 +31,11 @@ export default {
   // FALLA: secreto fijo y predecible, escrito en el código.
   // Se necesita para firmar el token anti-CSRF (corrección del CSRF).
   sessionSecret: 'origen-cafe-2024',
-
-  // FALLA: credenciales por defecto que nunca se cambian.
-  credencialesPorDefecto: {
-    username: 'admin',
-    password: 'admin',
-  },
+  adminPassword: process.env.ADMIN_PASSWORD,
+  valentinaPassword: process.env.VALENTINA_PASSWORD,
+  baristaPassword: process.env.BARISTA_PASSWORD,
+  mozoPassword: process.env.MOZO_PASSWORD,
+  clientePassword: process.env.CLIENTE_PASSWORD,
 
   uploadsDir: process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads'),
 };
