@@ -10,8 +10,33 @@ import reportesRoutes from './routes/reportes.routes';
 import comentariosRoutes from './routes/comentarios.routes';
 import adminRoutes from './routes/admin.routes';
 import debugRoutes from './routes/debug.routes';
+import helmet from 'helmet';
 
 const app = express();
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        scriptSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", 'data:'],
+        upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null,
+      },
+    },
+    xFrameOptions: {
+      action: 'deny',
+    },
+    referrerPolicy: {
+      policy: 'same-origin',
+    },
+  }),
+);
 
 /**
  * FALLA — Ajustes de configuración (OWASP A05:2021)
