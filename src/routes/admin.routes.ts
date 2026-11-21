@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
@@ -177,25 +178,96 @@ router.post('/probar-conexion', (req, res) => {
  * y guardar fuera del árbol web.
  * -----------------------------------------------------------------------------
  */
-router.post('/subir-archivo', express.json({ limit: '8mb' }), (req, res, next) => {
+
+const MAX_SIZE_BYTES = 2 * 1024 * 1024;
+
+const EXTENSIONES_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
+
+function detectarMime(buffer: Buffer): string | null {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  if (buffer.length >= 6) {
+    const header = buffer.toString('ascii', 0, 6);
+    if (header === 'GIF87a' || header === 'GIF89a') return 'image/gif';
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+
+  return null;
+}
+
+router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) => {
   try {
     const { nombre, contenidoBase64 } = req.body || {};
+
+    if (typeof nombre !== 'string' || typeof contenidoBase64 !== 'string') {
+      return res.status(400).json({ error: 'Falta el nombre o el contenido del archivo.' });
+    }
 
     if (!nombre || !contenidoBase64) {
       return res.status(400).json({ error: 'Falta el archivo.' });
     }
 
-    // FALLA: sin validación de extensión, MIME ni tamaño.
+    const ext = path.extname(nombre).toLowerCase();
+    const mimeEsperado = EXTENSIONES_MIME[ext];
+    if (!mimeEsperado) {
+      return res.status(400).json({ error: 'Extensión de archivo no permitida.' });
+    }
+
     const buffer = Buffer.from(contenidoBase64, 'base64');
+    if (buffer.length === 0 || buffer.length > MAX_SIZE_BYTES) {
+      return res.status(400).json({ error: 'Archivo vacío o demasiado grande.' });
+    }
+
+    const mimeReal = detectarMime(buffer);
+    if (!mimeReal || mimeReal !== mimeEsperado) {
+      return res
+        .status(400)
+        .json({ error: 'El contenido del archivo no corresponde a una imagen válida.' });
+    }
+
     fs.mkdirSync(config.uploadsDir, { recursive: true });
 
-    // FALLA: nombre tomado del cliente sin sanear (path traversal).
-    const destino = path.join(config.uploadsDir, nombre);
+    const random = crypto.randomUUID();
+    const nombreSeguro = `${random}${ext}`;
+    const destino = path.join(config.uploadsDir, nombreSeguro);
+    const dirBase = path.resolve(config.uploadsDir) + path.sep;
+    if (!path.resolve(destino).startsWith(dirBase)) {
+      return res.status(400).json({ error: 'Nombre de archivo inválido.' });
+    }
     fs.writeFileSync(destino, buffer);
 
     res.json({
       mensaje: 'Archivo subido.',
-      url: `/uploads/${nombre}`,
+      url: `/uploads/${nombreSeguro}`,
       bytes: buffer.length,
     });
   } catch (err) {
