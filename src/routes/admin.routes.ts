@@ -185,6 +185,10 @@ router.post('/subir-archivo', express.json({ limit: '8mb' }), (req, res, next) =
       return res.status(400).json({ error: 'Falta el archivo.' });
     }
 
+    if (!path.extname(nombre).match(/^\.(png|jpg|jpeg|svg)$/i)) {
+      return res.status(400).json({ error: 'Extensión de archivo no permitida.' });
+    }
+
     // FALLA: sin validación de extensión, MIME ni tamaño.
     const buffer = Buffer.from(contenidoBase64, 'base64');
     fs.mkdirSync(config.uploadsDir, { recursive: true });
