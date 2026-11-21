@@ -185,7 +185,7 @@ router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) =
       return res.status(400).json({ error: 'Falta el archivo.' });
     }
 
-    if (!path.extname(nombre).match(/^\.(png|jpg|jpeg|svg)$/i)) {
+    if (!path.extname(nombre).match(/^\.(png|jpg|jpeg|webp|gif)$/i)) {
       return res.status(400).json({ error: 'Extensión de archivo no permitida.' });
     }
 
@@ -195,13 +195,18 @@ router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) =
     }
     fs.mkdirSync(config.uploadsDir, { recursive: true });
 
-    // FALLA: nombre tomado del cliente sin sanear (path traversal).
-    const destino = path.join(config.uploadsDir, nombre);
+    const random = crypto.randomUUID();
+    const ext = path.extname(nombre);
+    const nombreSeguro = `${random}${ext}`;
+    const destino = path.join(config.uploadsDir, nombreSeguro);
+    if (!path.resolve(destino).startsWith(path.resolve(config.uploadsDir + path.sep))) {
+      return res.status(400).json({ error: 'Nombre de archivo inválido.' });
+    }
     fs.writeFileSync(destino, buffer);
 
     res.json({
       mensaje: 'Archivo subido.',
-      url: `/uploads/${nombre}`,
+      url: `/uploads/${nombreSeguro}`,
       bytes: buffer.length,
     });
   } catch (err) {
