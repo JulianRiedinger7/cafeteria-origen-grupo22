@@ -58,8 +58,12 @@ export function crearSesion(req: Request, res: Response, usuario: UsuarioSesion)
     expiraEn: null,
   });
 
-  // FALLA: cookie sin httpOnly / secure / sameSite.
-  res.cookie('sid', id, { path: '/' });
+  res.cookie('sid', id, {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
 
   return id;
 }
