@@ -27,6 +27,10 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Archivos subidos por el panel de administración.
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
 app.use('/uploads', express.static(config.uploadsDir));
 
 // Sitio web estático
