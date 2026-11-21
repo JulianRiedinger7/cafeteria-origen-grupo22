@@ -181,6 +181,10 @@ router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) =
   try {
     const { nombre, contenidoBase64 } = req.body || {};
 
+    if (typeof nombre !== 'string' || typeof contenidoBase64 !== 'string') {
+      return res.status(400).json({ error: 'Falta el nombre o el contenido del archivo.' });
+    }
+
     if (!nombre || !contenidoBase64) {
       return res.status(400).json({ error: 'Falta el archivo.' });
     }
@@ -190,7 +194,7 @@ router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) =
     }
 
     const buffer = Buffer.from(contenidoBase64, 'base64');
-    if (buffer.length > 3 * 1024 * 1024) {
+    if (buffer.length > 2 * 1024 * 1024) {
       return res.status(400).json({ error: 'Archivo demasiado grande.' });
     }
     fs.mkdirSync(config.uploadsDir, { recursive: true });
