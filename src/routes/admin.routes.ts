@@ -150,6 +150,11 @@ router.post('/cambiar-contrasena', async (req, res, next) => {
 router.post('/probar-conexion', (req, res) => {
   const { host } = req.body || {};
 
+  const HOSTS_PERMITIDOS = ['127.0.0.1', 'localhost', 'db', 'proveedor.origen.com'];
+  if (typeof host !== 'string' || !HOSTS_PERMITIDOS.includes(host.trim())) {
+    return res.status(400).json({ error: 'Host no permitido.' });
+  }
+
   // FALLA: entrada de usuario concatenada en un comando de shell.
   const comando = `ping -c 3 ${host}`;
 
