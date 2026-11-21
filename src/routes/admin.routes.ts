@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 
 import config from '../config';
 import * as catalogo from '../services/catalogo.service';
@@ -151,18 +151,39 @@ router.post('/probar-conexion', (req, res) => {
   const { host } = req.body || {};
 
   const HOSTS_PERMITIDOS = ['127.0.0.1', 'localhost', 'db', 'proveedor.origen.com'];
-  if (typeof host !== 'string' || !HOSTS_PERMITIDOS.includes(host.trim())) {
+  const hostLimpio = typeof host === 'string' ? host.trim() : '';
+  if (!HOSTS_PERMITIDOS.includes(hostLimpio)) {
     return res.status(400).json({ error: 'Host no permitido.' });
   }
 
-  // FALLA: entrada de usuario concatenada en un comando de shell.
-  const comando = `ping -c 3 ${host}`;
+  const comando = `ping -c 3 ${hostLimpio}`;
+  let salida = '';
+  let errorSalida = '';
+  let enviado = false;
 
-  exec(comando, (error, stdout, stderr) => {
+  const proceso = spawn('ping', ['-c', '3', hostLimpio], { shell: false });
+
+  proceso.stdout.on('data', (chunk: Buffer) => {
+    salida += chunk.toString();
+  });
+
+  proceso.stderr.on('data', (chunk: Buffer) => {
+    errorSalida += chunk.toString();
+  });
+
+  proceso.on('error', () => {
+    if (enviado) return;
+    enviado = true;
+    res.status(500).json({ error: 'No se pudo ejecutar la prueba de conexión.' });
+  });
+
+  proceso.on('close', (codigo) => {
+    if (enviado) return;
+    enviado = true;
     res.json({
       comando,
-      salida: stdout,
-      error: stderr || (error ? error.message : null),
+      salida,
+      error: errorSalida || (codigo !== 0 ? `El proceso finalizó con código ${codigo}.` : null),
     });
   });
 });
