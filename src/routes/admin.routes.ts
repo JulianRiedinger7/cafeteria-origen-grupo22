@@ -177,7 +177,7 @@ router.post('/probar-conexion', (req, res) => {
  * y guardar fuera del árbol web.
  * -----------------------------------------------------------------------------
  */
-router.post('/subir-archivo', express.json({ limit: '8mb' }), (req, res, next) => {
+router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) => {
   try {
     const { nombre, contenidoBase64 } = req.body || {};
 
@@ -189,8 +189,10 @@ router.post('/subir-archivo', express.json({ limit: '8mb' }), (req, res, next) =
       return res.status(400).json({ error: 'Extensión de archivo no permitida.' });
     }
 
-    // FALLA: sin validación de extensión, MIME ni tamaño.
     const buffer = Buffer.from(contenidoBase64, 'base64');
+    if (buffer.length > 3 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Archivo demasiado grande.' });
+    }
     fs.mkdirSync(config.uploadsDir, { recursive: true });
 
     // FALLA: nombre tomado del cliente sin sanear (path traversal).
