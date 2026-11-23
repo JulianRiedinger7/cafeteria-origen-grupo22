@@ -47,8 +47,12 @@ router.get('/ticket-promedio', async (req, res, next) => {
  */
 router.get('/ventas-por-variedad', async (req, res, next) => {
   try {
-    const variedad = (req.query.variedad as string | undefined) || '';
-    res.json({ ventas: await reportes.ventasPorVariedad(variedad) });
+    const ORIGENES = new Set(['Brasil', 'Colombia', 'Etiopía']);
+    const variedad = req.query.variedad;
+    if (typeof variedad !== 'string' || !ORIGENES.has(variedad)) {
+      return res.status(400).json({ error: 'Origen no válido.' });
+    }
+    res.json(await reportes.ventasPorVariedad(variedad));
   } catch (err) {
     next(err);
   }
