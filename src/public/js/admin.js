@@ -542,10 +542,13 @@
     // FALLA (XSS de DOM): se lee un parámetro de la URL y se inyecta con
     // innerHTML. Al abrir admin.html?vista=<script>...</script> se ejecuta
     // código en el navegador del admin.
-    var params = new URLSearchParams(window.location.search);
-    var objetivo = params.get('vista');
-    if (objetivo) {
-      $('#panel-bienvenida').innerHTML = 'Panel ' + objetivo;
+    var vistasPermitidas = new Set(
+    $$('.tab').map(function (t) { return t.getAttribute('data-vista'); })
+  );
+  var objetivo = new URLSearchParams(window.location.search).get('vista');
+
+  if (objetivo && vistasPermitidas.has(objetivo)) {
+    $('#panel-bienvenida').textContent = 'Panel ' + objetivo;
     }
 
     $('#form-login').addEventListener('submit', iniciarSesion);
