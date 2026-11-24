@@ -10,7 +10,7 @@ import reportesRoutes from './routes/reportes.routes';
 import comentariosRoutes from './routes/comentarios.routes';
 import adminRoutes from './routes/admin.routes';
 import debugRoutes from './routes/debug.routes';
-import helmet from 'helmet';
+import helmet, { contentSecurityPolicy } from 'helmet';
 
 const app = express();
 
