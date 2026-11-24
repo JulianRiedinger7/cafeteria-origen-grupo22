@@ -19,9 +19,22 @@
     return Number(valor || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
   }
 
+  function escaparHtml(valor) {
+    return String(valor == null ? '' : valor)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function raw(valor) {
-    // FALLA: no escapa nada. Usar escaparHtml() / textContent.
-    return String(valor == null ? '' : valor);
+    return escaparHtml(valor);
+  }
+
+  function setHtml(el, html) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.insertAdjacentHTML('afterbegin', html);
   }
 
   function postJSON(url, cuerpo) {
@@ -86,7 +99,7 @@
       window.OrigenCsrf.obtenerToken(true);
       $('#vista-login').hidden = false;
       $('#vista-panel').hidden = true;
-      $('#admin-user').innerHTML = '';
+      $('#admin-user').textContent = '';
     });
   }
 
@@ -94,12 +107,12 @@
     window.OrigenCsrf.obtenerToken(false);
     $('#vista-login').hidden = true;
     $('#vista-panel').hidden = false;
-    $('#admin-user').innerHTML =
-      'Sesión de <strong>' +
+    setHtml($('#admin-user'),
+      'Sesi?n de <strong>' +
       raw(usuario.nombre) +
-      '</strong> · rol: <strong>' +
+      '</strong> ? rol: <strong>' +
       raw(usuario.rol) +
-      '</strong>';
+      '</strong>');
     $('#panel-bienvenida').textContent = 'Hola, ' + usuario.nombre;
     cargarTodo();
   }
@@ -136,7 +149,7 @@
             },
           ];
 
-          $('#kpis').innerHTML = kpis
+          setHtml($('#kpis'), kpis
             .map(function (k) {
               return (
                 '<div class="kpi"><div class="kpi-label">' +
@@ -214,8 +227,8 @@
   function cargarPedidos() {
     api('/pedidos').then(function (resp) {
       var pedidos = resp.data.pedidos || [];
-      $('#tabla-pedidos').innerHTML = tablaPedidos(pedidos, true);
-      $('#tabla-ultimos').innerHTML = tablaPedidos(pedidos.slice(0, 5), false);
+      setHtml($('#tabla-pedidos'), tablaPedidos(pedidos, true));
+      setHtml($('#tabla-ultimos'), tablaPedidos(pedidos.slice(0, 5), false));
     });
   }
 
@@ -265,7 +278,7 @@
           '</tr>';
       });
 
-      $('#tabla-productos').innerHTML = html + '</tbody>';
+      setHtml($('#tabla-productos'), html + '</tbody>');
     });
   }
 
@@ -363,7 +376,7 @@
               value: mas ? raw(mas.nombre) + ' (' + raw(mas.unidades) + ')' : '—',
             },
           ];
-          $('#kpis-reportes').innerHTML = kpis
+          setHtml($('#kpis-reportes'), kpis
             .map(function (k) {
               return (
                 '<div class="kpi"><div class="kpi-label">' +
@@ -388,7 +401,7 @@
       function (resp) {
         if (!resp.ok) {
           feedback(caja, 'Error: ' + (resp.data.error || 'desconocido'), false);
-          $('#tabla-ventas').innerHTML = '';
+          $('#tabla-ventas').textContent = '';
           return;
         }
         var ventas = resp.data.ventas || [];
@@ -408,7 +421,7 @@
             money(v.total) +
             '</td></tr>';
         });
-        $('#tabla-ventas').innerHTML = html + '</tbody>';
+        setHtml($('#tabla-ventas'), html + '</tbody>');
         feedback(caja, 'Consulta realizada.', true);
       },
     );
@@ -456,7 +469,7 @@
           '</select></td>' +
           '</tr>';
       });
-      $('#tabla-usuarios').innerHTML = html + '</tbody>';
+      setHtml($('#tabla-usuarios'), html + '</tbody>');
     });
   }
 
