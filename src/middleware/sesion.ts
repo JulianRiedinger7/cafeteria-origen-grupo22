@@ -51,12 +51,11 @@ export function leerCookies(req: Request): Record<string, string> {
 
 /** Crea una sesión nueva para el usuario y setea la cookie. */
 export function crearSesion(req: Request, res: Response, usuario: UsuarioSesion): string {
-  contadorSesiones += 1;
+  const sidAnterior = leerCookies(req).sid;
+  if (sidAnterior) sesiones.delete(sidAnterior);
 
-  // FALLA: identificador predecible.
   const id = randomUUID();
 
-  // FALLA: la sesión nunca expira.
   sesiones.set(id, {
     usuario,
     creadaEn: Date.now(),
