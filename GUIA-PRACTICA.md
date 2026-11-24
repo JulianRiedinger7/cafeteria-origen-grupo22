@@ -131,7 +131,7 @@ sigue en rojo hasta que passes todos.
 > **Un detalle de los tests funcionales:** si en algún momento creaste a mano
 > un pedido con cantidad inválida (por ejemplo `-5` o `muchos`) aprovechándote
 > de la falta de validación, ese pedido queda con total `NaN` y **envenena la
-> facturación** (cualquier `SU+-M` de la base devuelve `NaN`). Por eso el test
+> facturación** (cualquier `SUM` de la base devuelve `NaN`). Por eso el test
 > funcional de facturación lo tiene en cuenta. Para dejar la base como nueva:
 > `docker compose down -v && docker compose up -d`.
 
