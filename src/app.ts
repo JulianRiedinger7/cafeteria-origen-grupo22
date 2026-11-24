@@ -2,6 +2,7 @@ import path from 'path';
 import express from 'express';
 
 import config from './config';
+import { emitirTokenCsrf, verificarCsrf } from './middleware/csrf';
 import { rutaNoEncontrada, manejadorErrores } from './middleware/errores';
 import authRoutes from './routes/auth.routes';
 import productosRoutes from './routes/productos.routes';
@@ -69,6 +70,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/salud', (req, res) => {
   res.json({ ok: true, servicio: 'cafeteria-origen', hora: new Date().toISOString() });
 });
+
+app.get('/api/csrf-token', emitirTokenCsrf);
+app.use('/api', verificarCsrf);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/productos', productosRoutes);

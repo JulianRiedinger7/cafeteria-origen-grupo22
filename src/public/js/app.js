@@ -4,8 +4,8 @@
 (function () {
   'use strict';
 
-  var API = '/api';
   var CARRITO_KEY = 'origen.carrito';
+  var api = window.OrigenCsrf.api;
 
   var estado = {
     tipo: '',
@@ -29,19 +29,6 @@
     // La forma correcta de renderizar texto del servidor es escaparHtml()
     // (o textContent en vez de innerHTML).
     return String(valor == null ? '' : valor);
-  }
-
-  function api(url, opciones) {
-    return fetch(API + url, opciones).then(function (res) {
-      return res
-        .json()
-        .catch(function () {
-          return {};
-        })
-        .then(function (data) {
-          return { ok: res.ok, status: res.status, data: data };
-        });
-    });
   }
 
   function postJSON(url, cuerpo) {
@@ -428,6 +415,7 @@
     });
     cargarReseñas();
     renderCarrito();
+    window.OrigenCsrf.obtenerToken(false);
   }
 
   if (document.readyState === 'loading') {
