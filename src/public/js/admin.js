@@ -4,9 +4,9 @@
 (function () {
   'use strict';
 
-  var API = '/api';
   var usuario = null;
   var productosCache = {};
+  var api = window.OrigenCsrf.api;
 
   function $(sel) {
     return document.querySelector(sel);
@@ -22,19 +22,6 @@
   function raw(valor) {
     // FALLA: no escapa nada. Usar escaparHtml() / textContent.
     return String(valor == null ? '' : valor);
-  }
-
-  function api(url, opciones) {
-    return fetch(API + url, opciones).then(function (res) {
-      return res
-        .json()
-        .catch(function () {
-          return {};
-        })
-        .then(function (data) {
-          return { ok: res.ok, status: res.status, data: data };
-        });
-    });
   }
 
   function postJSON(url, cuerpo) {
@@ -87,6 +74,7 @@
         return;
       }
       usuario = resp.data.usuario;
+      window.OrigenCsrf.invalidarToken();
       mostrarPanel();
     });
   }
@@ -94,6 +82,8 @@
   function cerrarSesion() {
     postJSON('/auth/logout', {}).then(function () {
       usuario = null;
+      window.OrigenCsrf.invalidarToken();
+      window.OrigenCsrf.obtenerToken(true);
       $('#vista-login').hidden = false;
       $('#vista-panel').hidden = true;
       $('#admin-user').innerHTML = '';
@@ -101,6 +91,7 @@
   }
 
   function mostrarPanel() {
+    window.OrigenCsrf.obtenerToken(false);
     $('#vista-login').hidden = true;
     $('#vista-panel').hidden = false;
     $('#admin-user').innerHTML =
