@@ -27,11 +27,10 @@ export function manejadorErrores(
   res: Response,
   next: NextFunction,
 ): void {
-  console.error('[error]', err.message);
+  console.error('[error]', err.stack ?? err.message);
 
-  // FALLA: se filtra el stack trace al cliente.
-  res.status(err.status || 500).json({
-    error: err.message,
-    stack: err.stack,
-  });
+const estado = err.status && err.status >= 400 && err.status < 500 ? err.status: 500;
+res.status(estado).json({
+  error: estado === 500 ? 'Error interno del servidor': err.message});
+
 }
