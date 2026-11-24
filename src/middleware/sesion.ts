@@ -29,7 +29,6 @@ import type { Sesion, UsuarioSesion } from '../tipos';
 import { randomUUID } from 'node:crypto';
 
 export const sesiones = new Map<string, Sesion>();
-let contadorSesiones = 0;
 
 /** Lee las cookies de la petición (parser mínimo, sin dependencias). */
 export function leerCookies(req: Request): Record<string, string> {
@@ -48,12 +47,11 @@ export function leerCookies(req: Request): Record<string, string> {
 
 /** Crea una sesión nueva para el usuario y setea la cookie. */
 export function crearSesion(req: Request, res: Response, usuario: UsuarioSesion): string {
-  contadorSesiones += 1;
+  const sidAnterior = leerCookies(req).sid;
+  if (sidAnterior) sesiones.delete(sidAnterior);
 
-  // FALLA: identificador predecible.
   const id = randomUUID();
 
-  // FALLA: la sesión nunca expira.
   sesiones.set(id, {
     usuario,
     creadaEn: Date.now(),
