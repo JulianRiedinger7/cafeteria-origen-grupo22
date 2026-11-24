@@ -24,13 +24,13 @@ export default {
     // FALLA: la aplicación se conecta con el superusuario de la base de datos
     // (mínimos privilegios). Existe un usuario `origen_app` con permisos
     // reducidos para usar como corrección.
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
+    user: process.env.DB_USER || 'origen_app',
+    password: process.env.DB_PASSWORD || 'origen_app_2024',
   },
 
   // FALLA: secreto fijo y predecible, escrito en el código.
   // Se necesita para firmar el token anti-CSRF (corrección del CSRF).
-  sessionSecret: 'origen-cafe-2024',
+  sessionSecret: process.env.SESSION_SECRET || 'origen-cafe-2024',
   adminPassword: process.env.ADMIN_PASSWORD,
   valentinaPassword: process.env.VALENTINA_PASSWORD,
   baristaPassword: process.env.BARISTA_PASSWORD,
