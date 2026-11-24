@@ -52,7 +52,7 @@ router.get('/ventas-por-variedad', async (req, res, next) => {
     if (typeof variedad !== 'string' || !ORIGENES.has(variedad)) {
       return res.status(400).json({ error: 'Origen no válido.' });
     }
-    res.json(await reportes.ventasPorVariedad(variedad));
+    res.json({ ventas: await reportes.ventasPorVariedad(variedad) });
   } catch (err) {
     next(err);
   }
