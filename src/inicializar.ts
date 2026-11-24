@@ -1,10 +1,12 @@
+import crypto from 'crypto';
 import * as db from './db';
 import { CATALOGO } from './catalogo';
 import type { Rol } from './tipos';
+import config from './config';
 
 interface UsuarioInicial {
   username: string;
-  password: string;
+  password?: string;
   rol: Rol;
   nombre: string;
 }
@@ -21,31 +23,31 @@ interface UsuarioInicial {
 export const USUARIOS_INICIALES: UsuarioInicial[] = [
   {
     username: 'admin',
-    password: 'admin',
+    password: config.adminPassword,
     rol: 'admin',
     nombre: 'Administración',
   },
   {
     username: 'valentina',
-    password: 'origen2024',
+    password: config.valentinaPassword,
     rol: 'admin',
     nombre: 'Valentina',
   },
   {
     username: 'barista',
-    password: 'cafe123',
+    password: config.baristaPassword,
     rol: 'barista',
     nombre: 'Barista',
   },
   {
     username: 'mozo',
-    password: 'mozo123',
+    password: config.mozoPassword,
     rol: 'mozo',
     nombre: 'Mozo de sala',
   },
   {
     username: 'cliente',
-    password: 'cliente',
+    password: config.clientePassword,
     rol: 'cliente',
     nombre: 'Cliente',
   },
@@ -53,14 +55,21 @@ export const USUARIOS_INICIALES: UsuarioInicial[] = [
 
 export async function inicializarBase(): Promise<void> {
   // --- Usuarios -------------------------------------------------------------
-  for (const usuario of USUARIOS_INICIALES) {
-    // FALLA: la contraseña se guarda tal cual, sin hash ni salt.
-    await db.query(
-      `INSERT INTO usuarios (username, password, rol, nombre)
+  if (config.nodeEnv !== 'production') {
+    for (const usuario of USUARIOS_INICIALES) {
+      const claveGenerada = !usuario.password;
+      const password = usuario.password || crypto.randomBytes(12).toString('base64url');
+      // FALLA: la contraseña se guarda tal cual, sin hash ni salt.
+      const { rowCount } = await db.query(
+        `INSERT INTO usuarios (username, password, rol, nombre)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (username) DO NOTHING`,
-      [usuario.username, usuario.password, usuario.rol, usuario.nombre]
-    );
+        [usuario.username, password, usuario.rol, usuario.nombre],
+      );
+      if (rowCount && claveGenerada && config.nodeEnv === 'development') {
+        console.log(`[init] Usuario "${usuario.username}" creado con clave temporal: ${password}`);
+      }
+    }
   }
 
   // --- Catálogo -------------------------------------------------------------
@@ -79,7 +88,7 @@ export async function inicializarBase(): Promise<void> {
         producto.precio_base,
         producto.precio_por_gramo,
         producto.descripcion,
-      ]
+      ],
     );
   }
 }

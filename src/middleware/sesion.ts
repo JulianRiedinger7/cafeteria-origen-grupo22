@@ -26,8 +26,13 @@ import type { Request, Response } from 'express';
 
 import type { Sesion, UsuarioSesion } from '../tipos';
 
+import { randomUUID } from 'node:crypto';
+import { TIMEOUT } from 'node:dns';
+
 export const sesiones = new Map<string, Sesion>();
 let contadorSesiones = 0;
+const TTL_INACTIVIDAD = 30 * 60 * 1000;
+const MAX_VIDA = 8 * 60 * 60 * 1000;
 
 /** Lee las cookies de la petición (parser mínimo, sin dependencias). */
 export function leerCookies(req: Request): Record<string, string> {
@@ -49,17 +54,22 @@ export function crearSesion(req: Request, res: Response, usuario: UsuarioSesion)
   contadorSesiones += 1;
 
   // FALLA: identificador predecible.
-  const id = `sesion_${contadorSesiones}`;
+  const id = randomUUID();
 
   // FALLA: la sesión nunca expira.
   sesiones.set(id, {
     usuario,
     creadaEn: Date.now(),
-    expiraEn: null,
+    expiraEn: Date.now() + TTL_INACTIVIDAD,
   });
 
-  // FALLA: cookie sin httpOnly / secure / sameSite.
-  res.cookie('sid', id, { path: '/' });
+  res.cookie('sid', id, {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: MAX_VIDA,
+  });
 
   return id;
 }
@@ -69,7 +79,19 @@ export function obtenerSesion(req: Request): Sesion | null {
   const cookies = leerCookies(req);
   const id = cookies.sid;
   if (!id) return null;
-  return sesiones.get(id) || null;
+
+  const sesion = sesiones.get(id);
+  if(!sesion) return null; 
+
+  const ahora = Date.now();
+  const expiraEn = sesion.expiraEn ?? 0; 
+
+  if (Date.now() >= expiraEn || Date.now() - sesion.creadaEn >= MAX_VIDA)
+  { sesiones.delete(id); return null;}
+
+
+  sesion.expiraEn = Date.now() + TTL_INACTIVIDAD;
+  return sesion; 
 }
 
 /** Cierra la sesión en el servidor (debería llamarse en el logout). */
