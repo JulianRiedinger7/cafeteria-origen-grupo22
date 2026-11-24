@@ -24,11 +24,22 @@
     return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
   }
 
+  function escaparHtml(valor) {
+    return String(valor == null ? '' : valor)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function raw(valor) {
-    // FALLA: esta función NO escapa nada, devuelve el valor tal cual.
-    // La forma correcta de renderizar texto del servidor es escaparHtml()
-    // (o textContent en vez de innerHTML).
-    return String(valor == null ? '' : valor);
+    return escaparHtml(valor);
+  }
+
+  function setHtml(el, html) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.insertAdjacentHTML('afterbegin', html);
   }
 
   function postJSON(url, cuerpo) {
@@ -187,13 +198,14 @@
     var total = 0;
 
     if (estado.carrito.length === 0) {
-      cont.innerHTML = '<p class="empty">El carrito está vacío.</p>';
-      lista.innerHTML = '';
+      setHtml(cont, '<p class="empty">El carrito est? vac?o.</p>');
+      lista.textContent = '';
+      lista.textContent = '';
       $('#resumen-total').textContent = money(0);
       return;
     }
 
-    cont.innerHTML = estado.carrito
+    setHtml(cont, estado.carrito
       .map(function (item, i) {
         var subtotal = item.precio * item.cantidad;
         total += subtotal;
@@ -232,7 +244,7 @@
       })
       .join('');
 
-    lista.innerHTML = estado.carrito
+    setHtml(lista, estado.carrito
       .map(function (item) {
         return (
           '<li><span>' +
@@ -296,7 +308,7 @@
     return api('/comentarios').then(function (resp) {
       var cont = $('#lista-resenas');
       if (!resp.ok || !resp.data.comentarios || resp.data.comentarios.length === 0) {
-        cont.innerHTML = '<p class="empty">Todavía no hay reseñas. ¡Sé el primero!</p>';
+        setHtml(cont, '<p class="empty">Todav?a no hay rese?as. ?S? el primero!</p>');
         return;
       }
       cont.replaceChildren();
