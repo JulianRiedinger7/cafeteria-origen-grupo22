@@ -10,8 +10,33 @@ import reportesRoutes from './routes/reportes.routes';
 import comentariosRoutes from './routes/comentarios.routes';
 import adminRoutes from './routes/admin.routes';
 import debugRoutes from './routes/debug.routes';
+import helmet from 'helmet';
 
 const app = express();
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        scriptSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", 'data:'],
+        upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null,
+      },
+    },
+    xFrameOptions: {
+      action: 'deny',
+    },
+    referrerPolicy: {
+      policy: 'same-origin',
+    },
+  }),
+);
 
 /**
  * FALLA — Ajustes de configuración (OWASP A05:2021)
@@ -23,10 +48,18 @@ const app = express();
  *  - política de CORS restringida al propio origen
  *  - helmet CSP además sirve como capa extra frente al XSS
  */
-app.use(express.json({ limit: '1mb' }));
+const jsonGlobal = express.json({ limit: '1mb' });
+app.use((req, res, next) => {
+  if (req.path === '/api/admin/subir-archivo') return next();
+  return jsonGlobal(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 
 // Archivos subidos por el panel de administración.
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
 app.use('/uploads', express.static(config.uploadsDir));
 
 // Sitio web estático
