@@ -1,25 +1,10 @@
 /**
  * Gestión de sesiones.
  *
- * -----------------------------------------------------------------------------
- * FALLA — Gestión de sesiones insegura (Autenticación insegura)
- * -----------------------------------------------------------------------------
- * 1. El identificador de sesión es un contador incremental (`sesion_1`,
- *    `sesion_2`, ...): es PREDECIBLE y adivinable. Un atacante puede recorrer
- *    los valores y usurpar la sesión de otro usuario (fijación de sesión).
- * 2. La cookie se emite SIN `httpOnly` (JavaScript puede leerla), SIN `secure`
- *    (viaja en texto plano por HTTP) y SIN `sameSite` (el navegador la manda
- *    también en peticiones desde otros sitios → facilita CSRF).
- * 3. Las sesiones NO expiran nunca.
- * 4. Al iniciar sesión no se regenera el identificador.
- * 5. El cierre de sesión sólo borra la cookie del cliente: la sesión sigue
- *    viva en el servidor.
- *
- * Corrección: usar crypto.randomUUID() (o crypto.randomBytes -> hex) para el
- * id, con expiración por inactividad y absoluta, cookie con
- * { httpOnly: true, secure: true, sameSite: 'lax' }, regeneración del id tras
- * el login y borrado de la sesión en el servidor al hacer logout.
- * -----------------------------------------------------------------------------
+ * Usa crypto.randomUUID() para generar identificadores aleatorios,
+ * regenera el identificador tras el login, establece expiración por
+ * inactividad y absoluta, configura la cookie con httpOnly/secure/sameSite
+ * e invalida la sesión en el servidor al cerrar sesión.
  */
 
 import type { Request, Response } from 'express';
@@ -27,10 +12,8 @@ import type { Request, Response } from 'express';
 import type { Sesion, UsuarioSesion } from '../tipos';
 
 import { randomUUID } from 'node:crypto';
-import { TIMEOUT } from 'node:dns';
 
 export const sesiones = new Map<string, Sesion>();
-let contadorSesiones = 0;
 const TTL_INACTIVIDAD = 30 * 60 * 1000;
 const MAX_VIDA = 8 * 60 * 60 * 1000;
 
@@ -83,14 +66,15 @@ export function obtenerSesion(req: Request): Sesion | null {
   if(!sesion) return null; 
 
   const ahora = Date.now();
-  const expiraEn = sesion.expiraEn ?? 0; 
+  const expiraEn = sesion.expiraEn ?? 0;
 
-  if (Date.now() >= expiraEn || Date.now() - sesion.creadaEn >= MAX_VIDA)
-  { sesiones.delete(id); return null;}
+  if (ahora >= expiraEn || ahora - sesion.creadaEn >= MAX_VIDA) {
+    sesiones.delete(id);
+    return null;
+  }
 
-
-  sesion.expiraEn = Date.now() + TTL_INACTIVIDAD;
-  return sesion; 
+  sesion.expiraEn = ahora + TTL_INACTIVIDAD;
+  return sesion;
 }
 
 /** Cierra la sesión en el servidor (debería llamarse en el logout). */
