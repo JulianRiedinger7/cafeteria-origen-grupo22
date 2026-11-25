@@ -1,34 +1,22 @@
 import express from 'express';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 
 import config from '../config';
 import * as catalogo from '../services/catalogo.service';
 import * as usuarios from '../services/usuarios.service';
 import { requiereSesion, requiereRol } from '../middleware/auth';
-import type { Usuario } from '../tipos';
+import type { Rol, Usuario } from '../tipos';
 
 const router = express.Router();
+const ROLES_PERMITIDOS: readonly Rol[] = ['admin', 'barista', 'mozo', 'cliente'];
+const ROLES_ADMIN: readonly Rol[] = ['admin'];
 
-/**
- * Rutas del panel de administración.
- *
- * -----------------------------------------------------------------------------
- * FALLA — Autorización ausente / escalada de privilegios (OWASP A01:2021)
- * -----------------------------------------------------------------------------
- * Se exige estar autenticado, pero NO se comprueba el rol: `requiereRol` está
- * importado y no se usa. Cualquier usuario autenticado (incluso con rol
- * "cliente") entra al panel y puede:
- *   - crear, editar y BORRAR productos,
- *   - cambiar contraseñas,
- *   - dar de alta usuarios y cambiarles el rol (escalada de privilegios),
- *   - ejecutar comandos en el servidor.
- *
- * Corrección: `router.use(requiereRol('admin'))` sobre las rutas sensibles.
- * -----------------------------------------------------------------------------
- */
+/** Todas las rutas de administración requieren sesión y rol admin. */
 router.use(requiereSesion);
+router.use(requiereRol('admin'));
 
 /** GET /api/admin/usuarios */
 router.get('/usuarios', async (req, res, next) => {
@@ -42,20 +30,56 @@ router.get('/usuarios', async (req, res, next) => {
 /**
  * PUT /api/admin/usuarios/:id
  *
- * FALLA — Asignación masiva: se actualiza cualquier campo que llegue en el
- * cuerpo, incluido el `rol`. Un usuario con rol "cliente" puede mandarse
- * `{"rol": "admin"}` y convertirse en administrador.
+ * Actualiza los campos permitidos de un usuario.
+ * Para modificar el campo `rol` verifica explícitamente que quien hace la
+ * petición tenga rol de administrador y valida el nuevo rol contra lista blanca.
  */
 router.put('/usuarios/:id', async (req, res, next) => {
   try {
+    const idUsuario = Number(req.params.id);
+    if (!Number.isInteger(idUsuario) || idUsuario <= 0) {
+      return res.status(400).json({ error: 'El id de usuario debe ser un entero positivo.' });
+    }
+
     const { username, nombre, rol, password } = req.body || {};
     const cambios: Partial<Usuario> = {};
-    if (username !== undefined) cambios.username = username;
-    if (nombre !== undefined) cambios.nombre = nombre;
-    if (rol !== undefined) cambios.rol = rol;
-    if (password !== undefined) cambios.password = password;
 
-    const usuario = await usuarios.actualizar(req.params.id, cambios);
+    if (username !== undefined) {
+      if (typeof username !== 'string' || username.trim().length < 2 || username.trim().length > 40) {
+        return res.status(400).json({ error: 'Nombre de usuario inválido.' });
+      }
+      cambios.username = username.trim();
+    }
+
+    if (nombre !== undefined) {
+      if (typeof nombre !== 'string' || nombre.trim().length < 2 || nombre.trim().length > 80) {
+        return res.status(400).json({ error: 'Nombre inválido.' });
+      }
+      cambios.nombre = nombre.trim();
+    }
+
+    if (rol !== undefined) {
+      if (!req.usuario || req.usuario.rol !== 'admin' || !ROLES_ADMIN.includes(req.usuario.rol)) {
+        return res.status(403).json({ error: 'No tenés permisos para cambiar roles.' });
+      }
+      if (typeof rol !== 'string' || !ROLES_PERMITIDOS.includes(rol as Rol)) {
+        return res.status(400).json({ error: 'Rol no permitido.' });
+      }
+      cambios.rol = rol as Rol;
+    }
+
+    if (password !== undefined) {
+      if (typeof password !== 'string' || password.length < 8) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+      }
+      cambios.password = password;
+    }
+
+    if (Object.keys(cambios).length === 0) {
+      return res.status(400).json({ error: 'No se enviaron campos válidos para actualizar.' });
+    }
+
+    const usuario = await usuarios.actualizar(idUsuario, cambios);
     if (!usuario) {
       return res.status(404).json({ error: 'Usuario no encontrado.' });
     }
@@ -149,14 +173,40 @@ router.post('/cambiar-contrasena', async (req, res, next) => {
 router.post('/probar-conexion', (req, res) => {
   const { host } = req.body || {};
 
-  // FALLA: entrada de usuario concatenada en un comando de shell.
-  const comando = `ping -c 3 ${host}`;
+  const HOSTS_PERMITIDOS = ['127.0.0.1', 'localhost', 'db', 'proveedor.origen.com'];
+  const hostLimpio = typeof host === 'string' ? host.trim() : '';
+  if (!HOSTS_PERMITIDOS.includes(hostLimpio)) {
+    return res.status(400).json({ error: 'Host no permitido.' });
+  }
 
-  exec(comando, (error, stdout, stderr) => {
+  const comando = `ping -c 3 ${hostLimpio}`;
+  let salida = '';
+  let errorSalida = '';
+  let enviado = false;
+
+  const proceso = spawn('ping', ['-c', '3', hostLimpio], { shell: false });
+
+  proceso.stdout.on('data', (chunk: Buffer) => {
+    salida += chunk.toString();
+  });
+
+  proceso.stderr.on('data', (chunk: Buffer) => {
+    errorSalida += chunk.toString();
+  });
+
+  proceso.on('error', () => {
+    if (enviado) return;
+    enviado = true;
+    res.status(500).json({ error: 'No se pudo ejecutar la prueba de conexión.' });
+  });
+
+  proceso.on('close', (codigo) => {
+    if (enviado) return;
+    enviado = true;
     res.json({
       comando,
-      salida: stdout,
-      error: stderr || (error ? error.message : null),
+      salida,
+      error: errorSalida || (codigo !== 0 ? `El proceso finalizó con código ${codigo}.` : null),
     });
   });
 });
@@ -177,25 +227,96 @@ router.post('/probar-conexion', (req, res) => {
  * y guardar fuera del árbol web.
  * -----------------------------------------------------------------------------
  */
-router.post('/subir-archivo', express.json({ limit: '8mb' }), (req, res, next) => {
+
+const MAX_SIZE_BYTES = 2 * 1024 * 1024;
+
+const EXTENSIONES_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
+
+function detectarMime(buffer: Buffer): string | null {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  if (buffer.length >= 6) {
+    const header = buffer.toString('ascii', 0, 6);
+    if (header === 'GIF87a' || header === 'GIF89a') return 'image/gif';
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+
+  return null;
+}
+
+router.post('/subir-archivo', express.json({ limit: '3mb' }), (req, res, next) => {
   try {
     const { nombre, contenidoBase64 } = req.body || {};
+
+    if (typeof nombre !== 'string' || typeof contenidoBase64 !== 'string') {
+      return res.status(400).json({ error: 'Falta el nombre o el contenido del archivo.' });
+    }
 
     if (!nombre || !contenidoBase64) {
       return res.status(400).json({ error: 'Falta el archivo.' });
     }
 
-    // FALLA: sin validación de extensión, MIME ni tamaño.
+    const ext = path.extname(nombre).toLowerCase();
+    const mimeEsperado = EXTENSIONES_MIME[ext];
+    if (!mimeEsperado) {
+      return res.status(400).json({ error: 'Extensión de archivo no permitida.' });
+    }
+
     const buffer = Buffer.from(contenidoBase64, 'base64');
+    if (buffer.length === 0 || buffer.length > MAX_SIZE_BYTES) {
+      return res.status(400).json({ error: 'Archivo vacío o demasiado grande.' });
+    }
+
+    const mimeReal = detectarMime(buffer);
+    if (!mimeReal || mimeReal !== mimeEsperado) {
+      return res
+        .status(400)
+        .json({ error: 'El contenido del archivo no corresponde a una imagen válida.' });
+    }
+
     fs.mkdirSync(config.uploadsDir, { recursive: true });
 
-    // FALLA: nombre tomado del cliente sin sanear (path traversal).
-    const destino = path.join(config.uploadsDir, nombre);
+    const random = crypto.randomUUID();
+    const nombreSeguro = `${random}${ext}`;
+    const destino = path.join(config.uploadsDir, nombreSeguro);
+    const dirBase = path.resolve(config.uploadsDir) + path.sep;
+    if (!path.resolve(destino).startsWith(dirBase)) {
+      return res.status(400).json({ error: 'Nombre de archivo inválido.' });
+    }
     fs.writeFileSync(destino, buffer);
 
     res.json({
       mensaje: 'Archivo subido.',
-      url: `/uploads/${nombre}`,
+      url: `/uploads/${nombreSeguro}`,
       bytes: buffer.length,
     });
   } catch (err) {

@@ -4,34 +4,37 @@
 (function () {
   'use strict';
 
-  var API = '/api';
   var usuario = null;
   var productosCache = {};
+  var api = window.OrigenCsrf.api;
 
-  function $(sel) { return document.querySelector(sel); }
-  function $$(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function $(sel) {
+    return document.querySelector(sel);
+  }
+  function $$(sel) {
+    return Array.prototype.slice.call(document.querySelectorAll(sel));
+  }
 
   function money(valor) {
     return Number(valor || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
   }
 
+  function escaparHtml(valor) {
+    return String(valor == null ? '' : valor)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function raw(valor) {
-    // FALLA: no escapa nada. Usar escaparHtml() / textContent.
-    return String(valor == null ? '' : valor);
+    return escaparHtml(valor);
   }
 
-  function escaparHtml(texto) {
-    var div = document.createElement('div');
-    div.textContent = texto == null ? '' : String(texto);
-    return div.innerHTML;
-  }
-
-  function api(url, opciones) {
-    return fetch(API + url, opciones).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
-        return { ok: res.ok, status: res.status, data: data };
-      });
-    });
+  function setHtml(el, html) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.insertAdjacentHTML('afterbegin', html);
   }
 
   function postJSON(url, cuerpo) {
@@ -60,7 +63,7 @@
 
   function feedback(el, mensaje, ok) {
     el.className = 'form-feedback ' + (ok ? 'is-ok' : 'is-error');
-    el.innerHTML = mensaje;
+    el.textContent = mensaje;
   }
 
   /* ------------------------------------------------------------------ login */
@@ -76,10 +79,15 @@
       if (!resp.ok) {
         // FALLA (XSS reflejado): el mensaje del servidor (que incluye el
         // usuario enviado) se pinta con innerHTML.
-        feedback(caja, 'No pudimos iniciar sesión: ' + (resp.data.error || 'error desconocido'), false);
+        feedback(
+          caja,
+          'No pudimos iniciar sesión: ' + (resp.data.error || 'error desconocido'),
+          false,
+        );
         return;
       }
       usuario = resp.data.usuario;
+      window.OrigenCsrf.invalidarToken();
       mostrarPanel();
     });
   }
@@ -87,17 +95,24 @@
   function cerrarSesion() {
     postJSON('/auth/logout', {}).then(function () {
       usuario = null;
+      window.OrigenCsrf.invalidarToken();
+      window.OrigenCsrf.obtenerToken(true);
       $('#vista-login').hidden = false;
       $('#vista-panel').hidden = true;
-      $('#admin-user').innerHTML = '';
+      $('#admin-user').textContent = '';
     });
   }
 
   function mostrarPanel() {
+    window.OrigenCsrf.obtenerToken(false);
     $('#vista-login').hidden = true;
     $('#vista-panel').hidden = false;
-    $('#admin-user').innerHTML =
-      'Sesión de <strong>' + raw(usuario.nombre) + '</strong> · rol: <strong>' + raw(usuario.rol) + '</strong>';
+    setHtml($('#admin-user'),
+      'Sesi?n de <strong>' +
+      raw(usuario.nombre) +
+      '</strong> ? rol: <strong>' +
+      raw(usuario.rol) +
+      '</strong>');
     $('#panel-bienvenida').textContent = 'Hola, ' + usuario.nombre;
     cargarTodo();
   }
@@ -125,16 +140,27 @@
             },
             {
               label: 'Unidades por tipo',
-              value: Object.keys(c.data.cantidadVendida || {})
-                .map(function (k) { return k + ': ' + c.data.cantidadVendida[k]; })
-                .join(' · ') || '—',
+              value:
+                Object.keys(c.data.cantidadVendida || {})
+                  .map(function (k) {
+                    return k + ': ' + c.data.cantidadVendida[k];
+                  })
+                  .join(' · ') || '—',
             },
           ];
 
-          $('#kpis').innerHTML = kpis.map(function (k) {
-            return '<div class="kpi"><div class="kpi-label">' + raw(k.label) + '</div>' +
-              '<div class="kpi-value">' + raw(k.value) + '</div></div>';
-          }).join('');
+          setHtml($('#kpis'), kpis
+            .map(function (k) {
+              return (
+                '<div class="kpi"><div class="kpi-label">' +
+                raw(k.label) +
+                '</div>' +
+                '<div class="kpi-value">' +
+                raw(k.value) +
+                '</div></div>'
+              );
+            })
+            .join('');
         });
       });
     });
@@ -144,22 +170,52 @@
   function tablaPedidos(filas, conAcciones) {
     if (!filas || filas.length === 0) return '<p class="empty">No hay pedidos.</p>';
 
-    var html = '<thead><tr><th>#</th><th>Mesa</th><th>Cliente</th><th>Estado</th>' +
-      '<th class="num">Total</th><th>Fecha</th>' + (conAcciones ? '<th>Acciones</th>' : '') + '</tr></thead><tbody>';
+    var html =
+      '<thead><tr><th>#</th><th>Mesa</th><th>Cliente</th><th>Estado</th>' +
+      '<th class="num">Total</th><th>Fecha</th>' +
+      (conAcciones ? '<th>Acciones</th>' : '') +
+      '</tr></thead><tbody>';
 
     filas.forEach(function (p) {
-      html += '<tr>' +
-        '<td>' + raw(p.id) + '</td>' +
-        '<td>' + raw(p.mesa) + '</td>' +
-        '<td>' + raw(p.cliente) + '</td>' +
-        '<td><span class="badge badge-' + raw(p.estado) + '">' + raw(p.estado) + '</span></td>' +
-        '<td class="num">' + money(p.total) + '</td>' +
-        '<td>' + new Date(p.creado_en).toLocaleString('es-AR') + '</td>' +
+      html +=
+        '<tr>' +
+        '<td>' +
+        raw(p.id) +
+        '</td>' +
+        '<td>' +
+        raw(p.mesa) +
+        '</td>' +
+        '<td>' +
+        raw(p.cliente) +
+        '</td>' +
+        '<td><span class="badge badge-' +
+        raw(p.estado) +
+        '">' +
+        raw(p.estado) +
+        '</span></td>' +
+        '<td class="num">' +
+        money(p.total) +
+        '</td>' +
+        '<td>' +
+        new Date(p.creado_en).toLocaleString('es-AR') +
+        '</td>' +
         (conAcciones
-          ? '<td><select data-pedido="' + raw(p.id) + '" class="sel-estado">' +
-            ['abierto', 'preparando', 'listo', 'entregado'].map(function (e) {
-              return '<option value="' + e + '"' + (e === p.estado ? ' selected' : '') + '>' + e + '</option>';
-            }).join('') +
+          ? '<td><select data-pedido="' +
+            raw(p.id) +
+            '" class="sel-estado">' +
+            ['abierto', 'preparando', 'listo', 'entregado']
+              .map(function (e) {
+                return (
+                  '<option value="' +
+                  e +
+                  '"' +
+                  (e === p.estado ? ' selected' : '') +
+                  '>' +
+                  e +
+                  '</option>'
+                );
+              })
+              .join('') +
             '</select></td>'
           : '') +
         '</tr>';
@@ -171,8 +227,8 @@
   function cargarPedidos() {
     api('/pedidos').then(function (resp) {
       var pedidos = resp.data.pedidos || [];
-      $('#tabla-pedidos').innerHTML = tablaPedidos(pedidos, true);
-      $('#tabla-ultimos').innerHTML = tablaPedidos(pedidos.slice(0, 5), false);
+      setHtml($('#tabla-pedidos'), tablaPedidos(pedidos, true));
+      setHtml($('#tabla-ultimos'), tablaPedidos(pedidos.slice(0, 5), false));
     });
   }
 
@@ -193,22 +249,36 @@
     api('/productos').then(function (resp) {
       var productos = resp.data.productos || [];
       productosCache = {};
-      var html = '<thead><tr><th>#</th><th>Nombre</th><th>Tipo</th><th>Origen</th>' +
+      var html =
+        '<thead><tr><th>#</th><th>Nombre</th><th>Tipo</th><th>Origen</th>' +
         '<th class="num">Precio</th><th>Acciones</th></tr></thead><tbody>';
 
       productos.forEach(function (p) {
         productosCache[p.id] = p;
-        html += '<tr>' +
-          '<td>' + raw(p.id) + '</td>' +
-          '<td>' + raw(p.nombre) + '</td>' +
-          '<td>' + raw(p.tipo) + '</td>' +
-          '<td>' + raw(p.variedad || '—') + '</td>' +
-          '<td class="num">' + money(p.precio) + '</td>' +
-          '<td><button class="link-danger" data-borrar="' + raw(p.id) + '">Borrar</button></td>' +
+        html +=
+          '<tr>' +
+          '<td>' +
+          raw(p.id) +
+          '</td>' +
+          '<td>' +
+          raw(p.nombre) +
+          '</td>' +
+          '<td>' +
+          raw(p.tipo) +
+          '</td>' +
+          '<td>' +
+          raw(p.variedad || '—') +
+          '</td>' +
+          '<td class="num">' +
+          money(p.precio) +
+          '</td>' +
+          '<td><button class="link-danger" data-borrar="' +
+          raw(p.id) +
+          '">Borrar</button></td>' +
           '</tr>';
       });
 
-      $('#tabla-productos').innerHTML = html + '</tbody>';
+      setHtml($('#tabla-productos'), html + '</tbody>');
     });
   }
 
@@ -228,7 +298,9 @@
       descripcion: $('#p-descripcion').value,
     };
 
-    var peticion = id ? putJSON('/admin/productos/' + id, cuerpo) : postJSON('/admin/productos', cuerpo);
+    var peticion = id
+      ? putJSON('/admin/productos/' + id, cuerpo)
+      : postJSON('/admin/productos', cuerpo);
 
     peticion.then(function (resp) {
       if (!resp.ok) {
@@ -299,12 +371,23 @@
             { label: 'Facturación', value: money(f.data.facturado) },
             { label: 'Pedidos', value: f.data.pedidos },
             { label: 'Ticket promedio', value: money(t.data.promedio) },
-            { label: 'Más vendido', value: mas ? raw(mas.nombre) + ' (' + raw(mas.unidades) + ')' : '—' },
+            {
+              label: 'Más vendido',
+              value: mas ? raw(mas.nombre) + ' (' + raw(mas.unidades) + ')' : '—',
+            },
           ];
-          $('#kpis-reportes').innerHTML = kpis.map(function (k) {
-            return '<div class="kpi"><div class="kpi-label">' + raw(k.label) + '</div>' +
-              '<div class="kpi-value">' + raw(k.value) + '</div></div>';
-          }).join('');
+          setHtml($('#kpis-reportes'), kpis
+            .map(function (k) {
+              return (
+                '<div class="kpi"><div class="kpi-label">' +
+                raw(k.label) +
+                '</div>' +
+                '<div class="kpi-value">' +
+                raw(k.value) +
+                '</div></div>'
+              );
+            })
+            .join('');
         });
       });
     });
@@ -314,43 +397,79 @@
     var caja = $('#reporte-feedback');
     var variedad = $('#reporte-variedad').value;
 
-    api('/reportes/ventas-por-variedad?variedad=' + encodeURIComponent(variedad)).then(function (resp) {
-      if (!resp.ok) {
-        feedback(caja, 'Error: ' + (resp.data.error || 'desconocido'), false);
-        $('#tabla-ventas').innerHTML = '';
-        return;
-      }
-      var ventas = resp.data.ventas || [];
-      var html = '<thead><tr><th>Origen</th><th>Producto</th><th class="num">Unidades</th>' +
-        '<th class="num">Total</th></tr></thead><tbody>';
-      ventas.forEach(function (v) {
-        html += '<tr><td>' + raw(v.variedad) + '</td><td>' + raw(v.nombre) + '</td>' +
-          '<td class="num">' + raw(v.unidades) + '</td><td class="num">' + money(v.total) + '</td></tr>';
-      });
-      $('#tabla-ventas').innerHTML = html + '</tbody>';
-      feedback(caja, 'Consulta realizada.', true);
-    });
+    api('/reportes/ventas-por-variedad?variedad=' + encodeURIComponent(variedad)).then(
+      function (resp) {
+        if (!resp.ok) {
+          feedback(caja, 'Error: ' + (resp.data.error || 'desconocido'), false);
+          $('#tabla-ventas').textContent = '';
+          return;
+        }
+        var ventas = resp.data.ventas || [];
+        var html =
+          '<thead><tr><th>Origen</th><th>Producto</th><th class="num">Unidades</th>' +
+          '<th class="num">Total</th></tr></thead><tbody>';
+        ventas.forEach(function (v) {
+          html +=
+            '<tr><td>' +
+            raw(v.variedad) +
+            '</td><td>' +
+            raw(v.nombre) +
+            '</td>' +
+            '<td class="num">' +
+            raw(v.unidades) +
+            '</td><td class="num">' +
+            money(v.total) +
+            '</td></tr>';
+        });
+        setHtml($('#tabla-ventas'), html + '</tbody>');
+        feedback(caja, 'Consulta realizada.', true);
+      },
+    );
   }
 
   /* -------------------------------------------------------------- usuarios */
   function cargarUsuarios() {
     api('/admin/usuarios').then(function (resp) {
       var usuarios = resp.data.usuarios || [];
-      var html = '<thead><tr><th>#</th><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Acciones</th></tr></thead><tbody>';
+      var html =
+        '<thead><tr><th>#</th><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Acciones</th></tr></thead><tbody>';
       usuarios.forEach(function (u) {
-        html += '<tr>' +
-          '<td>' + raw(u.id) + '</td>' +
-          '<td>' + raw(u.username) + '</td>' +
-          '<td>' + raw(u.nombre) + '</td>' +
-          '<td><span class="badge' + (u.rol === 'admin' ? ' badge-admin' : '') + '">' + raw(u.rol) + '</span></td>' +
-          '<td><select data-usuario="' + raw(u.id) + '" class="sel-rol">' +
-            ['cliente', 'mozo', 'barista', 'admin'].map(function (r) {
-              return '<option value="' + r + '"' + (r === u.rol ? ' selected' : '') + '>' + r + '</option>';
-            }).join('') +
-            '</select></td>' +
+        html +=
+          '<tr>' +
+          '<td>' +
+          raw(u.id) +
+          '</td>' +
+          '<td>' +
+          raw(u.username) +
+          '</td>' +
+          '<td>' +
+          raw(u.nombre) +
+          '</td>' +
+          '<td><span class="badge' +
+          (u.rol === 'admin' ? ' badge-admin' : '') +
+          '">' +
+          raw(u.rol) +
+          '</span></td>' +
+          '<td><select data-usuario="' +
+          raw(u.id) +
+          '" class="sel-rol">' +
+          ['cliente', 'mozo', 'barista', 'admin']
+            .map(function (r) {
+              return (
+                '<option value="' +
+                r +
+                '"' +
+                (r === u.rol ? ' selected' : '') +
+                '>' +
+                r +
+                '</option>'
+              );
+            })
+            .join('') +
+          '</select></td>' +
           '</tr>';
       });
-      $('#tabla-usuarios').innerHTML = html + '</tbody>';
+      setHtml($('#tabla-usuarios'), html + '</tbody>');
     });
   }
 
@@ -368,14 +487,16 @@
   function cambiarPassword(evento) {
     evento.preventDefault();
     var caja = $('#password-feedback');
-    postJSON('/admin/cambiar-contrasena', { nueva: $('#nueva-password').value }).then(function (resp) {
-      if (!resp.ok) {
-        feedback(caja, 'No se pudo cambiar: ' + (resp.data.error || 'error desconocido'), false);
-        return;
-      }
-      feedback(caja, 'Contraseña actualizada.', true);
-      $('#nueva-password').value = '';
-    });
+    postJSON('/admin/cambiar-contrasena', { nueva: $('#nueva-password').value }).then(
+      function (resp) {
+        if (!resp.ok) {
+          feedback(caja, 'No se pudo cambiar: ' + (resp.data.error || 'error desconocido'), false);
+          return;
+        }
+        feedback(caja, 'Contraseña actualizada.', true);
+        $('#nueva-password').value = '';
+      },
+    );
   }
 
   /* ----------------------------------------------------------- herramientas */
@@ -390,7 +511,9 @@
         return;
       }
       salida.textContent =
-        '$ ' + resp.data.comando + '\n\n' +
+        '$ ' +
+        resp.data.comando +
+        '\n\n' +
         (resp.data.salida || '') +
         (resp.data.error ? '\n[stderr]\n' + resp.data.error : '');
     });
@@ -409,7 +532,9 @@
     var tab = evento.target.closest('.tab');
     if (!tab) return;
     var vista = tab.getAttribute('data-vista');
-    $$('.tab').forEach(function (t) { t.classList.remove('is-active'); });
+    $$('.tab').forEach(function (t) {
+      t.classList.remove('is-active');
+    });
     tab.classList.add('is-active');
     $$('.tab-panel').forEach(function (p) {
       p.classList.toggle('is-active', p.getAttribute('data-panel') === vista);
@@ -421,10 +546,13 @@
     // FALLA (XSS de DOM): se lee un parámetro de la URL y se inyecta con
     // innerHTML. Al abrir admin.html?vista=<script>...</script> se ejecuta
     // código en el navegador del admin.
-    var params = new URLSearchParams(window.location.search);
-    var objetivo = params.get('vista');
-    if (objetivo) {
-      $('#panel-bienvenida').innerHTML = 'Panel ' + objetivo;
+    var vistasPermitidas = new Set(
+    $$('.tab').map(function (t) { return t.getAttribute('data-vista'); })
+  );
+  var objetivo = new URLSearchParams(window.location.search).get('vista');
+
+  if (objetivo && vistasPermitidas.has(objetivo)) {
+    $('#panel-bienvenida').textContent = 'Panel ' + objetivo;
     }
 
     $('#form-login').addEventListener('submit', iniciarSesion);

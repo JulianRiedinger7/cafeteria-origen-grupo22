@@ -18,15 +18,39 @@ router.get('/', async (req, res, next) => {
 /**
  * POST /api/comentarios
  *
- * FALLAS: sin token anti-CSRF, sin validación de longitud/rango y sin
- * sanitización (XSS almacenado).
+ * FALLA: sin token anti-CSRF.
+ *
+ * La longitud y el rango de los datos se validan antes de guardarlos.
  */
 router.post('/', async (req, res, next) => {
   try {
     const { autor, texto, calificacion } = req.body || {};
+
+    if (
+      typeof autor !== 'string' ||
+      typeof texto !== 'string' ||
+      typeof calificacion !== 'number'
+    ) {
+      return res.status(400).json({ error: 'Datos de la reseña inválidos.' });
+    }
+
+    const autorLimpio = autor.trim();
+    const textoLimpio = texto.trim();
+    if (
+      autorLimpio.length < 2 ||
+      autorLimpio.length > 40 ||
+      textoLimpio.length < 3 ||
+      textoLimpio.length > 280 ||
+      !Number.isInteger(calificacion) ||
+      calificacion < 1 ||
+      calificacion > 5
+    ) {
+      return res.status(400).json({ error: 'Datos de la reseña inválidos.' });
+    }
+
     const comentario = await comentarios.crear({
-      autor,
-      texto,
+      autor: autorLimpio,
+      texto: textoLimpio,
       calificacion,
     });
     res.status(201).json(comentario);

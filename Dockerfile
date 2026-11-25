@@ -24,13 +24,17 @@ COPY tests ./tests
 # (configuración de Docker, mínimos privilegios en la base de datos).
 COPY docker-compose.yml Dockerfile ./
 
-# Carpeta de archivos subidos
-RUN mkdir -p /app/uploads
+# Carpeta de archivos subidos y usuario sin privilegios (mínimos privilegios)
+RUN addgroup -S origen && adduser -S -G origen -h /home/origen origen \
+    && mkdir -p /home/origen /app/uploads \
+    && chown -R origen:origen /home/origen /app/uploads
 
 EXPOSE 3000
 
 # Liveness del contenedor: /api/salud
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/salud || exit 1
+
+USER origen
 
 CMD ["node", "--import", "tsx", "src/server.ts"]

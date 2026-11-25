@@ -1,10 +1,13 @@
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import * as db from './db';
 import { CATALOGO } from './catalogo';
 import type { Rol } from './tipos';
+import config from './config';
 
 interface UsuarioInicial {
   username: string;
-  password: string;
+  password?: string;
   rol: Rol;
   nombre: string;
 }
@@ -12,40 +15,38 @@ interface UsuarioInicial {
 /**
  * Carga los datos iniciales (usuarios y catálogo) si la base está vacía.
  *
- * FALLA — Almacenamiento inseguro de credenciales:
- * las contraseñas de los usuarios se guardan en TEXTO PLANO.
- * La corrección es hashear con bcrypt + salt por usuario
- * (bcryptjs ya está instalado como dependencia del proyecto).
+ * Las contraseñas nuevas se guardan con bcrypt. Las cuentas antiguas en texto
+ * plano se migran aquí de forma idempotente, preservando la clave original.
  */
 
 export const USUARIOS_INICIALES: UsuarioInicial[] = [
   {
     username: 'admin',
-    password: 'admin',
+    password: config.adminPassword,
     rol: 'admin',
     nombre: 'Administración',
   },
   {
     username: 'valentina',
-    password: 'origen2024',
+    password: config.valentinaPassword,
     rol: 'admin',
     nombre: 'Valentina',
   },
   {
     username: 'barista',
-    password: 'cafe123',
+    password: config.baristaPassword,
     rol: 'barista',
     nombre: 'Barista',
   },
   {
     username: 'mozo',
-    password: 'mozo123',
+    password: config.mozoPassword,
     rol: 'mozo',
     nombre: 'Mozo de sala',
   },
   {
     username: 'cliente',
-    password: 'cliente',
+    password: config.clientePassword,
     rol: 'cliente',
     nombre: 'Cliente',
   },
@@ -53,14 +54,33 @@ export const USUARIOS_INICIALES: UsuarioInicial[] = [
 
 export async function inicializarBase(): Promise<void> {
   // --- Usuarios -------------------------------------------------------------
-  for (const usuario of USUARIOS_INICIALES) {
-    // FALLA: la contraseña se guarda tal cual, sin hash ni salt.
-    await db.query(
-      `INSERT INTO usuarios (username, password, rol, nombre)
+  if (config.nodeEnv !== 'production') {
+    for (const usuario of USUARIOS_INICIALES) {
+      const claveGenerada = !usuario.password;
+      const password = usuario.password || crypto.randomBytes(12).toString('base64url');
+      const passwordHash = await bcrypt.hash(password, 12);
+      const { rowCount } = await db.query(
+        `INSERT INTO usuarios (username, password, rol, nombre)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (username) DO NOTHING`,
-      [usuario.username, usuario.password, usuario.rol, usuario.nombre]
-    );
+        [usuario.username, passwordHash, usuario.rol, usuario.nombre],
+      );
+      if (rowCount && claveGenerada && config.nodeEnv === 'development') {
+        console.log(`[init] Usuario "${usuario.username}" creado con clave temporal: ${password}`);
+      }
+    }
+  }
+
+  const { rows: usuarios } = await db.query<{ id: number; password: string }>(
+    'SELECT id, password FROM usuarios',
+  );
+  for (const usuario of usuarios) {
+    if (/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(usuario.password)) continue;
+    const passwordHash = await bcrypt.hash(usuario.password, 12);
+    await db.query('UPDATE usuarios SET password = $1 WHERE id = $2', [
+      passwordHash,
+      usuario.id,
+    ]);
   }
 
   // --- Catálogo -------------------------------------------------------------
@@ -79,7 +99,7 @@ export async function inicializarBase(): Promise<void> {
         producto.precio_base,
         producto.precio_por_gramo,
         producto.descripcion,
-      ]
+      ],
     );
   }
 }
