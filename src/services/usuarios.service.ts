@@ -30,10 +30,10 @@ export async function listar(): Promise<Usuario[]> {
   return rows;
 }
 
+const CAMPOS_ACTUALIZABLES = new Set(['username', 'nombre', 'rol', 'password']);
+
 /**
- * Actualiza un usuario.
- * FALLA — Asignación masiva / escalada de privilegios: se actualiza el rol
- * sin verificar que quien llama tenga permiso para hacerlo.
+ * Actualiza los campos permitidos de un usuario (lista blanca de columnas).
  */
 export async function actualizar(
   id: number | string,
@@ -43,6 +43,7 @@ export async function actualizar(
   const valores: unknown[] = [];
   let i = 1;
   for (const [campo, valor] of Object.entries(cambios)) {
+    if (!CAMPOS_ACTUALIZABLES.has(campo)) continue;
     campos.push(`${campo} = $${i}`);
     valores.push(
       campo === 'password' && typeof valor === 'string'
