@@ -8,9 +8,11 @@ import config from '../config';
 import * as catalogo from '../services/catalogo.service';
 import * as usuarios from '../services/usuarios.service';
 import { requiereSesion, requiereRol } from '../middleware/auth';
-import type { Usuario } from '../tipos';
+import type { Rol, Usuario } from '../tipos';
 
 const router = express.Router();
+const ROLES_PERMITIDOS: readonly Rol[] = ['admin', 'barista', 'mozo', 'cliente'];
+const ROLES_ADMIN: readonly Rol[] = ['admin'];
 
 /** Todas las rutas de administración requieren sesión y rol admin. */
 router.use(requiereSesion);
@@ -28,20 +30,56 @@ router.get('/usuarios', async (req, res, next) => {
 /**
  * PUT /api/admin/usuarios/:id
  *
- * FALLA — Asignación masiva: se actualiza cualquier campo que llegue en el
- * cuerpo, incluido el `rol`. Un usuario con rol "cliente" puede mandarse
- * `{"rol": "admin"}` y convertirse en administrador.
+ * Actualiza los campos permitidos de un usuario.
+ * Para modificar el campo `rol` verifica explícitamente que quien hace la
+ * petición tenga rol de administrador y valida el nuevo rol contra lista blanca.
  */
 router.put('/usuarios/:id', async (req, res, next) => {
   try {
+    const idUsuario = Number(req.params.id);
+    if (!Number.isInteger(idUsuario) || idUsuario <= 0) {
+      return res.status(400).json({ error: 'El id de usuario debe ser un entero positivo.' });
+    }
+
     const { username, nombre, rol, password } = req.body || {};
     const cambios: Partial<Usuario> = {};
-    if (username !== undefined) cambios.username = username;
-    if (nombre !== undefined) cambios.nombre = nombre;
-    if (rol !== undefined) cambios.rol = rol;
-    if (password !== undefined) cambios.password = password;
 
-    const usuario = await usuarios.actualizar(req.params.id, cambios);
+    if (username !== undefined) {
+      if (typeof username !== 'string' || username.trim().length < 2 || username.trim().length > 40) {
+        return res.status(400).json({ error: 'Nombre de usuario inválido.' });
+      }
+      cambios.username = username.trim();
+    }
+
+    if (nombre !== undefined) {
+      if (typeof nombre !== 'string' || nombre.trim().length < 2 || nombre.trim().length > 80) {
+        return res.status(400).json({ error: 'Nombre inválido.' });
+      }
+      cambios.nombre = nombre.trim();
+    }
+
+    if (rol !== undefined) {
+      if (!req.usuario || req.usuario.rol !== 'admin' || !ROLES_ADMIN.includes(req.usuario.rol)) {
+        return res.status(403).json({ error: 'No tenés permisos para cambiar roles.' });
+      }
+      if (typeof rol !== 'string' || !ROLES_PERMITIDOS.includes(rol as Rol)) {
+        return res.status(400).json({ error: 'Rol no permitido.' });
+      }
+      cambios.rol = rol as Rol;
+    }
+
+    if (password !== undefined) {
+      if (typeof password !== 'string' || password.length < 8) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+      }
+      cambios.password = password;
+    }
+
+    if (Object.keys(cambios).length === 0) {
+      return res.status(400).json({ error: 'No se enviaron campos válidos para actualizar.' });
+    }
+
+    const usuario = await usuarios.actualizar(idUsuario, cambios);
     if (!usuario) {
       return res.status(404).json({ error: 'Usuario no encontrado.' });
     }
